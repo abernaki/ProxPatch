@@ -33,6 +33,7 @@ use models::{NodeWithVms};
 use nodes::get_nodes;
 use nodes::wait_for_node_online;
 use std::collections::HashMap;
+use std::path::Path;
 use std::time::Duration;
 use version::VERSION;
 use vms::get_running_vms;
@@ -60,8 +61,13 @@ fn run_proxpatch(cli: &Cli) -> Result<(), Box<dyn std::error::Error>> {
 
     debug!("→ Validating for custom config file...");
     let config = if let Some(path) = cli.config.as_deref() {
-        debug!("→ Processing custom config file: {}", path);
-        Some(load_config(path)?)
+        if Path::new(path).is_file() {
+            debug!("→ Processing custom config file: {}", path);
+            Some(load_config(path)?)
+        } else {
+            warn!("✗ Custom config file '{}' is not present. Processing with defaults.", path);
+            None
+        }
     } else {
         debug!("✓ No custom config file specified. Processing with defaults.");
         None
@@ -91,10 +97,16 @@ fn run_proxpatch(cli: &Cli) -> Result<(), Box<dyn std::error::Error>> {
         }
     };
 
+    let excluded_nodes: &[String] = config.as_ref().map(|c| c.excluded_nodes.as_slice()).unwrap_or(&[]);
     let nodes = get_nodes()?;
     let mut cluster: HashMap<String, NodeWithVms> = HashMap::new();
 
     for node in nodes {
+        if excluded_nodes.contains(&node.node) {
+            info!("→ Skipping excluded node: {}", node.node);
+            continue;
+        }
+
         let node_name = node.node.clone();
         let vms = get_running_vms(&node_name)?;
 
