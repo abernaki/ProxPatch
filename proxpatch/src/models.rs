@@ -9,6 +9,10 @@ pub struct Config {
     pub deactivate_proxlb: bool,
     #[serde(default)]
     pub excluded_nodes: Vec<String>,
+    #[serde(default)]
+    pub patch_only_nodes: Vec<String>,
+    #[serde(default)]
+    pub security_only: bool,
 }
 
 fn default_ssh_user() -> String {

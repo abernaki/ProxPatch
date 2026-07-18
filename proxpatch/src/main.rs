@@ -14,15 +14,12 @@ mod vms;
 
 use clap::Parser;
 use cli::Cli;
-use crate::calculations::calculate_migrations;
 use crate::calculations::calculate_migrations_for_node;
 use crate::calculations::apply_plan_to_cluster;
 use crate::config::load_config;
 use crate::cluster::val_cluster_status;
-use crate::helpers::node_ssh_target;
 use crate::helpers::test_pkg_jq;
 use crate::migrate::exec_migrate;
-use crate::models::MigrationPlan;
 use crate::patch::exec_reboot;
 use crate::patch::exec_upgrade;
 use crate::patch::val_reboot;
@@ -36,25 +33,21 @@ use nodes::get_nodes;
 use nodes::wait_for_node_online;
 use std::collections::HashMap;
 use std::path::Path;
-use std::time::Duration;
 use version::VERSION;
 use vms::get_running_vms;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let cli = Cli::parse();
     logging::init(cli.debug)?;
-    let interval = Duration::from_secs(60 * 60 * 6);
-    let interval_hours = interval.as_secs() / 3600;
 
-    loop {
-        info!("→ Starting scheduled ProxPatch run");
-        if let Err(e) = run_proxpatch(&cli) {
-            error!("Run failed: {}", e);
-        }
-
-        info!("→ Waiting for next update cycle in {:?} hours", interval_hours);
-        std::thread::sleep(interval);
+    info!("→ Starting ProxPatch run");
+    if let Err(e) = run_proxpatch(&cli) {
+        error!("Run failed: {}", e);
+        return Err(e);
     }
+
+    info!("✓ ProxPatch run finished");
+    Ok(())
 }
 
 fn run_proxpatch(cli: &Cli) -> Result<(), Box<dyn std::error::Error>> {
@@ -74,6 +67,11 @@ fn run_proxpatch(cli: &Cli) -> Result<(), Box<dyn std::error::Error>> {
         debug!("✓ No custom config file specified. Processing with defaults.");
         None
     };
+
+    let dry_run = cli.dry_run;
+    if dry_run {
+        warn!("→ DRY RUN MODE: no upgrades, migrations, or reboots will actually be executed.");
+    }
 
     debug!("→ Processing user validation...");
     let user = config.as_ref().map_or_else(
@@ -99,7 +97,13 @@ fn run_proxpatch(cli: &Cli) -> Result<(), Box<dyn std::error::Error>> {
         }
     };
 
+    let security_only = config.as_ref().map(|c| c.security_only).unwrap_or(false);
+    if security_only {
+        debug!("✓ security_only enabled — using unattended-upgrade instead of dist-upgrade.");
+    }
+
     let excluded_nodes: &[String] = config.as_ref().map(|c| c.excluded_nodes.as_slice()).unwrap_or(&[]);
+    let patch_only_nodes: &[String] = config.as_ref().map(|c| c.patch_only_nodes.as_slice()).unwrap_or(&[]);
     let nodes = get_nodes()?;
     let mut cluster: HashMap<String, NodeWithVms> = HashMap::new();
 
@@ -123,7 +127,7 @@ fn run_proxpatch(cli: &Cli) -> Result<(), Box<dyn std::error::Error>> {
 
     for (node_name, data) in cluster.iter_mut() {
         let ssh_target = data.resources.ip.as_deref().unwrap_or(node_name);
-        exec_upgrade(user, ssh_target)?;
+        exec_upgrade(user, ssh_target, security_only, dry_run)?;
         data.resources.reboot_required = val_reboot(user, ssh_target)?;
     }
 
@@ -136,6 +140,11 @@ fn run_proxpatch(cli: &Cli) -> Result<(), Box<dyn std::error::Error>> {
             .unwrap_or(false);
 
         if !reboot_required {
+            continue;
+        }
+
+        if patch_only_nodes.contains(&node_name) {
+            info!("→ {} needs a reboot but is in patch_only_nodes — leaving it for manual reboot.", node_name);
             continue;
         }
 
@@ -154,7 +163,7 @@ fn run_proxpatch(cli: &Cli) -> Result<(), Box<dyn std::error::Error>> {
                 .and_then(|d| d.resources.ip.as_deref())
                 .unwrap_or(&plan.from);
 
-            exec_migrate(user, from_ip, &plan.from, &plan.to, plan.vmid)?;
+            exec_migrate(user, from_ip, &plan.from, &plan.to, plan.vmid, dry_run)?;
             apply_plan_to_cluster(&mut cluster, &plan);
         }
 
@@ -165,23 +174,27 @@ fn run_proxpatch(cli: &Cli) -> Result<(), Box<dyn std::error::Error>> {
 
         let ssh_target = cluster.get(&node_name).and_then(|d| d.resources.ip.as_deref()).unwrap_or(&node_name);
 
-        exec_enable_maintenance(user, ssh_target, &node_name)?;
+        exec_enable_maintenance(user, ssh_target, &node_name, dry_run)?;
         std::thread::sleep(std::time::Duration::from_secs(30));
 
-        exec_reboot(user, ssh_target)?;
+        exec_reboot(user, ssh_target, dry_run)?;
         std::thread::sleep(std::time::Duration::from_secs(120));
 
-        exec_disable_maintenance(user, ssh_target, &node_name)?;
+        exec_disable_maintenance(user, ssh_target, &node_name, dry_run)?;
         std::thread::sleep(std::time::Duration::from_secs(30));
 
-        if !wait_for_node_online(&node_name, 30)? {
-            error!("Node {} did not come back online in time", node_name);
-            return Err(format!("Node {} failed to rejoin cluster", node_name).into());
-        }
+        if dry_run {
+            info!("→ [DRY RUN] Skipping post-reboot online/health checks for {}", node_name);
+        } else {
+            if !wait_for_node_online(&node_name, 30)? {
+                error!("Node {} did not come back online in time", node_name);
+                return Err(format!("Node {} failed to rejoin cluster", node_name).into());
+            }
 
-        if !val_cluster_status()? {
-            error!("Cluster unhealthy after reboot of {}", node_name);
-            return Err(format!("Cluster unhealthy after reboot of {}", node_name).into());
+            if !val_cluster_status()? {
+                error!("Cluster unhealthy after reboot of {}", node_name);
+                return Err(format!("Cluster unhealthy after reboot of {}", node_name).into());
+            }
         }
 
     }

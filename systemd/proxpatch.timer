@@ -1,0 +1,13 @@
+[Unit]
+Description=Run ProxPatch on a schedule
+
+[Timer]
+# Every 6 hours by default (00:00, 06:00, 12:00, 18:00). Adjust to taste —
+# supports full systemd.time(7) calendar syntax, e.g.:
+#   OnCalendar=*-*-* 02:00:00        daily at 2am
+#   OnCalendar=Mon,Thu 03:00:00      Mondays and Thursdays at 3am
+OnCalendar=*-*-* 00/6:00:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

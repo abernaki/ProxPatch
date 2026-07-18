@@ -7,9 +7,15 @@ pub fn exec_migrate(
     current_node: &str,
     target_node: &str,
     guest_id: u64,
+    dry_run: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
 
     debug!("→ Starting migration of VM {} from {} to {}", guest_id, current_node, target_node);
+
+    if dry_run {
+        info!("→ [DRY RUN] Would migrate VM {} from {} to {}", guest_id, current_node, target_node);
+        return Ok(());
+    }
 
     let base_cmd = format!(
         "pvesh create /nodes/{}/qemu/{}/migrate -target {} -online 1 -with-local-disks 1",

@@ -13,4 +13,7 @@ pub struct Cli {
 
     #[arg(short = 'd', long, help = "Run ProxPatch in debug mode")]
     pub debug: bool,
+
+    #[arg(long, help = "Simulate a run without applying upgrades, migrations, or reboots")]
+    pub dry_run: bool,
 }

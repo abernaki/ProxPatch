@@ -14,3 +14,17 @@
 # IMPORTANT: review this list before enabling the service. By default nothing
 # is excluded, meaning every node in the cluster is in scope.
 excluded_nodes: []
+
+# Nodes that should still be patched (upgrades applied normally) but will
+# never be migrated or rebooted automatically, even if a reboot becomes
+# required (e.g. after a kernel update). Useful for nodes running guests
+# that can't be live-migrated, such as LXC containers — reboot those
+# manually on your own schedule instead.
+patch_only_nodes: []
+
+# Use `unattended-upgrade` instead of `apt-get dist-upgrade` on each node.
+# This respects that node's own /etc/apt/apt.conf.d/50unattended-upgrades
+# Allowed-Origins config (e.g. security updates only), instead of pulling
+# in every available package update. Requires the unattended-upgrades
+# package to already be installed on each target node.
+#security_only: false

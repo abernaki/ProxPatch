@@ -4,9 +4,5 @@ After=network-online.target pveproxy.service
 Wants=network-online.target pveproxy.service
 
 [Service]
+Type=oneshot
 ExecStart=/usr/bin/proxpatch -c /etc/proxpatch/config.yaml
-ExecReload=/bin/kill -HUP $MAINPID
-KillMode=process
-
-[Install]
-WantedBy=multi-user.target
