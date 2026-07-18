@@ -1,2 +1,3 @@
 proxpatch/target/x86_64-unknown-linux-musl/release/proxpatch usr/bin/
 systemd/proxpatch.service /lib/systemd/system/
+config/config.yaml etc/proxpatch/

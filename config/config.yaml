@@ -1,0 +1,16 @@
+# ProxPatch default configuration.
+# Installed to /etc/proxpatch/config.yaml and loaded via the systemd unit's
+# `-c` flag. This file existing at install time (even with defaults) is what
+# makes the -c flag meaningful — without it, ProxPatch silently falls back to
+# running unscoped against every node in the cluster. See docs/03_configuration.md.
+
+# SSH user ProxPatch connects as (requires passwordless root/sudo). Default: root
+#ssh_user: root
+
+# Stop the ProxLB systemd service before patching, and restart it after.
+#deactivate_proxlb: false
+
+# Nodes ProxPatch will never upgrade, migrate to/from, or reboot.
+# IMPORTANT: review this list before enabling the service. By default nothing
+# is excluded, meaning every node in the cluster is in scope.
+excluded_nodes: []
